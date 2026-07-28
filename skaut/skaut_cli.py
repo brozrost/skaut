@@ -114,7 +114,7 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--off",
+        "--below",
         type=float,
         default=30.0,
         help="Print listings priced this many percent below the average. Default: 30.",
@@ -314,7 +314,7 @@ def main() -> None:
 
     print_below_average_listings(
         listings,
-        percentage_below=args.off / 100,
+        percentage_below=args.below / 100,
     )
 
     if args.output:
