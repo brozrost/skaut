@@ -1,0 +1,21 @@
+[project]
+name = "skaut"
+version = "0.0.1"
+description = "Python CLI tool for scraping bazos.cz"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests", "beautifulsoup4"]
+authors = [
+    { name = "Rostislav Brož" }
+]
+license = "MIT"
+
+[project.urls]
+Homepage = "https://github.com/brozrost/skaut"
+Repository = "https://github.com/brozrost/skaut"
+
+[tool.setuptools]
+packages = ["skaut"]
+
+[project.scripts]
+skaut = "skaut.skaut_cli:main"
