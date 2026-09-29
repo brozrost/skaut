@@ -1,18 +1,22 @@
-# main.py
+# skaut_cli.py
 #
 # Command-line interface for the Bazoš scraper.
 #
 # Example usage:
 #
-#     python main.py --category auto --query octavia
+#     skaut --category auto --query octavia
 #
 # Limit the number of pages:
 #
-#     python main.py --category auto --query octavia --max-pages 2
+#     skaut --category auto --query octavia --max-pages 2
+#
+# Show all collected listings:
+#
+#     skaut --category auto --query octavia --all
 #
 # Save results to JSON:
 #
-#     python main.py --category auto --query octavia --output results.json
+#     skaut --category auto --query octavia --output results.json
 
 import re
 import argparse
@@ -114,10 +118,23 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--all",
+        dest="show_all",
+        action="store_true",
+        help=(
+            "Print all collected listings, skipping the below-average filter. "
+            "Search filters such as --max-price still apply."
+        ),
+    )
+
+    parser.add_argument(
         "--below",
         type=float,
         default=30.0,
-        help="Print listings priced this many percent below the average. Default: 30.",
+        help=(
+            "Print listings priced this many percent below the average. "
+            "Default: 30. Ignored when --all is supplied."
+        ),
     )
 
     return parser.parse_args()
@@ -178,7 +195,7 @@ def save_json(listings: list[Listing], output_path: str) -> None:
 
 def print_summary(listings: list[Listing]) -> None:
     """
-    Print a compact terminal summary.
+    Print a compact terminal summary of every collected listing.
 
     Full descriptions are omitted here because they make terminal output noisy.
     """
@@ -191,6 +208,7 @@ def print_summary(listings: list[Listing]) -> None:
         print("-" * 80)
 
     print(f"Total unique listings: {len(listings)}")
+
 
 def parse_price(price_text: str | None) -> int | None:
     """
@@ -289,6 +307,7 @@ def print_below_average_listings(
         print(f"URL: {listing.url}")
         print("-" * 80)
 
+
 def main() -> None:
     """
     Main CLI workflow:
@@ -296,8 +315,8 @@ def main() -> None:
     1. Read arguments.
     2. Build the search URL.
     3. Run the scraper.
-    4. Print results.
-    5. Optionally save JSON.
+    4. Print all listings with --all, or below-average listings by default.
+    5. Optionally save all collected listings to JSON.
     """
 
     args = parse_arguments()
@@ -312,10 +331,13 @@ def main() -> None:
         max_pages=args.max_pages,
     )
 
-    print_below_average_listings(
-        listings,
-        percentage_below=args.below / 100,
-    )
+    if args.show_all:
+        print_summary(listings)
+    else:
+        print_below_average_listings(
+            listings,
+            percentage_below=args.below / 100,
+        )
 
     if args.output:
         save_json(listings, args.output)
