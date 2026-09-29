@@ -1,4 +1,4 @@
-# scraper.py
+# skaut_scraper.py
 #
 # Scrapes Bazoš search-result pages.
 #
@@ -14,8 +14,6 @@
 #     <div class="inzeratylok">Bruntál<br>792 01</div>
 #     <div class="inzeratyview">140 x</div>
 # </div>
-#
-# This matches the source you supplied. :contentReference[oaicite:0]{index=0}
 
 import re
 import time
@@ -221,6 +219,7 @@ def scrape_page(
     )
 
     # Raise an exception for 4xx and 5xx responses.
+    # scrape_all_pages handles a 404 on a later page as the end of results.
     response.raise_for_status()
 
     # Bazoš declares UTF-8 in the HTML source, so requests should normally
@@ -263,13 +262,14 @@ def scrape_page(
 
     return listings, next_page
 
+
 def scrape_all_pages(
     start_url: str,
     delay: float = 1.0,
     max_pages: int = 5,
 ) -> list[Listing]:
     """
-    Scrape every available result page.
+    Scrape consecutive result pages, up to max_pages.
 
     Parameters:
 
@@ -280,10 +280,15 @@ def scrape_all_pages(
             Number of seconds to wait between page requests.
 
         max_pages:
-            Optional development limit.
+            Maximum number of result pages to request.
 
             For example, max_pages=3 scrapes at most three pages.
-            None means no artificial limit.
+
+    Stop normally when a page contains no listings or a later page
+    returns HTTP 404. Return all listings collected before that point.
+
+    A 404 on the first page, other HTTP errors and connection errors
+    still raise exceptions.
 
     Results are deduplicated using the numeric listing ID.
     """
@@ -301,7 +306,7 @@ def scrape_all_pages(
 
                 parsed = urlparse(start_url)
 
-                # insert "/20/", "/40/", ... before the query string
+                # Insert "/20/", "/40/", ... before the query string.
                 path = f"/{offset}/"
 
                 url = urlunparse((
@@ -315,7 +320,20 @@ def scrape_all_pages(
 
             print(f"Scraping {url}")
 
-            page_listings, _ = scrape_page(url, session)
+            try:
+                page_listings, _ = scrape_page(url, session)
+            except requests.HTTPError as error:
+                # An out-of-range pagination URL may return 404.
+                # Only treat it as the end after the first page succeeded.
+                if (
+                    page > 0
+                    and error.response is not None
+                    and error.response.status_code == 404
+                ):
+                    print("No more result pages, stopping.")
+                    break
+
+                raise
 
             if not page_listings:
                 print("No listings found, stopping.")
@@ -326,7 +344,9 @@ def scrape_all_pages(
 
             print(f"Found {len(page_listings)} listings")
 
-            time.sleep(delay)
+            # Wait only if another request can follow.
+            if page + 1 < max_pages:
+                time.sleep(delay)
 
     return list(listings_by_id.values())
 
