@@ -14,6 +14,10 @@
 #
 #     skaut --category auto --query octavia --all
 #
+# Show listings from today and yesterday:
+#
+#     skaut --category auto --query octavia --last 2 --all
+#
 # Save results to JSON:
 #
 #     skaut --category auto --query octavia --output results.json
@@ -23,7 +27,9 @@ import argparse
 import json
 
 from dataclasses import asdict
+from datetime import date, datetime, timedelta
 from urllib.parse import urlencode
+from zoneinfo import ZoneInfo
 
 from .skaut_scraper import Listing, scrape_all_pages
 
@@ -45,6 +51,22 @@ CATEGORY_DOMAINS = {
     "nabytek": "nabytek.bazos.cz",
     "ostatni": "ostatni.bazos.cz",
 }
+
+
+def positive_int(value: str) -> int:
+    """Parse a positive integer for command-line arguments."""
+
+    try:
+        number = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "must be a positive integer"
+        ) from None
+
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+
+    return number
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -118,12 +140,22 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--last",
+        type=positive_int,
+        metavar="DAYS",
+        help=(
+            "Keep listings from the last DAYS calendar days, including today "
+            "in Prague time. For example, --last 2 means today and yesterday."
+        ),
+    )
+
+    parser.add_argument(
         "--all",
         dest="show_all",
         action="store_true",
         help=(
             "Print all collected listings, skipping the below-average filter. "
-            "Search filters such as --max-price still apply."
+            "Search filters such as --max-price and --last still apply."
         ),
     )
 
@@ -175,9 +207,47 @@ def build_search_url(args: argparse.Namespace) -> str:
     return f"https://{domain}/?{query_string}"
 
 
+def filter_recent_listings(
+    listings: list[Listing],
+    last_days: int,
+    today: date | None = None,
+) -> list[Listing]:
+    """
+    Keep listings from the last N calendar days, including today.
+
+    Dates are interpreted in Europe/Prague. Listings with missing or
+    invalid dates are excluded. The optional today argument is useful
+    when checking date boundaries.
+    """
+
+    if last_days < 1:
+        raise ValueError("last_days must be a positive integer.")
+
+    if today is None:
+        today = datetime.now(ZoneInfo("Europe/Prague")).date()
+
+    days_back = min(last_days - 1, today.toordinal() - 1)
+    cutoff = today - timedelta(days=days_back)
+    recent_listings: list[Listing] = []
+
+    for listing in listings:
+        if listing.date is None:
+            continue
+
+        try:
+            listing_date = date.fromisoformat(listing.date)
+        except ValueError:
+            continue
+
+        if cutoff <= listing_date <= today:
+            recent_listings.append(listing)
+
+    return recent_listings
+
+
 def save_json(listings: list[Listing], output_path: str) -> None:
     """
-    Save listings to a UTF-8 JSON file.
+    Save listings matching the search and date filters to a UTF-8 JSON file.
 
     asdict() converts each Listing dataclass into a normal dictionary.
     """
@@ -202,6 +272,7 @@ def print_summary(listings: list[Listing]) -> None:
 
     for listing in listings:
         print(f"[{listing.id}] {listing.title}")
+        print(f"Date:     {listing.date or 'Unknown'}")
         print(f"Price:    {listing.price}")
         print(f"Location: {listing.location}")
         print(f"URL:      {listing.url}")
@@ -302,6 +373,7 @@ def print_below_average_listings(
         ) * 100
 
         print(listing.title)
+        print(f"Date: {listing.date or 'Unknown'}")
         print(f"Price: {price:,.0f} Kč")
         print(f"Below average: {difference_percentage:.1f}%")
         print(f"URL: {listing.url}")
@@ -315,8 +387,9 @@ def main() -> None:
     1. Read arguments.
     2. Build the search URL.
     3. Run the scraper.
-    4. Print all listings with --all, or below-average listings by default.
-    5. Optionally save all collected listings to JSON.
+    4. Apply the optional --last date filter.
+    5. Print all remaining listings with --all, or below-average listings.
+    6. Optionally save listings matching the search and date filters to JSON.
     """
 
     args = parse_arguments()
@@ -330,6 +403,14 @@ def main() -> None:
         delay=args.delay,
         max_pages=args.max_pages,
     )
+
+    if args.last is not None:
+        collected_count = len(listings)
+        listings = filter_recent_listings(listings, args.last)
+        print(
+            f"Listings in the last {args.last} calendar day(s): "
+            f"{len(listings)} of {collected_count}"
+        )
 
     if args.show_all:
         print_summary(listings)
