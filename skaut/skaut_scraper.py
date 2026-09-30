@@ -8,6 +8,7 @@
 #     <h2 class="nadpis">
 #         <a href="/inzerat/221817487/example.php">Title</a>
 #     </h2>
+#     <span class="velikost10"> - [30.9. 2026]</span>
 #
 #     <div class="popis">Description...</div>
 #     <div class="inzeratycena">149 800 Kč</div>
@@ -18,6 +19,7 @@
 import re
 import time
 from dataclasses import dataclass
+from datetime import date
 from urllib.parse import urljoin
 from urllib.parse import urlparse, urlunparse
 
@@ -52,6 +54,7 @@ class Listing:
     price: str | None
     location: str | None
     views: str | None
+    date: str | None = None
 
 
 def get_text(element: Tag | None) -> str | None:
@@ -78,6 +81,37 @@ def get_text(element: Tag | None) -> str | None:
     text = element.get_text(" ", strip=True)
 
     return text or None
+
+
+def parse_listing_date(element: Tag) -> str | None:
+    """
+    Extract the date displayed beside the listing title.
+
+    For example, '[30.9. 2026]' becomes '2026-09-30'.
+    Return None if the date is missing or invalid.
+    """
+
+    date_text = get_text(
+        element.select_one("h2.nadpis + span.velikost10")
+    )
+
+    if date_text is None:
+        return None
+
+    match = re.search(
+        r"\[\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{4})\s*\]",
+        date_text,
+    )
+
+    if match is None:
+        return None
+
+    day, month, year = map(int, match.groups())
+
+    try:
+        return date(year, month, day).isoformat()
+    except ValueError:
+        return None
 
 
 def extract_listing_id(url: str) -> str:
@@ -162,6 +196,7 @@ def parse_listing(element: Tag, page_url: str) -> Listing | None:
         views=get_text(
             element.select_one(".inzeratyview")
         ),
+        date=parse_listing_date(element),
     )
 
 
@@ -358,6 +393,7 @@ def print_listing(listing: Listing) -> None:
 
     print(f"ID:          {listing.id}")
     print(f"Title:       {listing.title}")
+    print(f"Date:        {listing.date or 'Unknown'}")
     print(f"Price:       {listing.price}")
     print(f"Location:    {listing.location}")
     print(f"Views:       {listing.views}")
